@@ -24,11 +24,11 @@ pub const Element = struct {
     attributes: AttributeList,
     children: ContentList,
 
-    fn init(tag: []const u8, alloc: *Allocator) Element {
+    fn init(tag: []const u8) Element {
         return .{
             .tag = tag,
-            .attributes = AttributeList.init(alloc),
-            .children = ContentList.init(alloc),
+            .attributes = AttributeList{},
+            .children = ContentList{},
         };
     }
 
@@ -377,7 +377,7 @@ fn tryParseAttr(ctx: *ParseContext, alloc: *Allocator) !?*Attribute {
     const value = try parseAttrValue(ctx, alloc);
 
     const attr = try alloc.create(Attribute);
-    attr.name = try mem.dupe(alloc, u8, name);
+    attr.name = try alloc.dupe(u8, name);
     attr.value = value;
     return attr;
 }
@@ -391,11 +391,11 @@ fn tryParseElement(ctx: *ParseContext, alloc: *Allocator) !?*Element {
     };
 
     const element = try alloc.create(Element);
-    element.* = Element.init(try std.mem.dupe(alloc, u8, tag), alloc);
+    element.* = Element.init(try alloc.dupe(u8, tag));
 
     while (ctx.eatWs()) {
         const attr = (try tryParseAttr(ctx, alloc)) orelse break;
-        try element.attributes.push(attr);
+        try element.attributes.append(alloc.*, attr);
     }
 
     if (ctx.eatStr("/>")) {
@@ -412,7 +412,7 @@ fn tryParseElement(ctx: *ParseContext, alloc: *Allocator) !?*Element {
         }
 
         const content = try parseContent(ctx, alloc);
-        try element.children.push(content);
+        try element.children.append(alloc.*, content);
     }
 
     const closing_tag = try parseNameNoDupe(ctx);
@@ -549,7 +549,7 @@ fn tryParseComment(ctx: *ParseContext, alloc: *Allocator) !?[]const u8 {
     }
 
     const end = ctx.offset - "-->".len;
-    return try mem.dupe(alloc, u8, ctx.source[begin .. end]);
+    return try alloc.dupe(u8, ctx.source[begin .. end]);
 }
 
 fn unescapeEntity(text: []const u8) !u8 {
