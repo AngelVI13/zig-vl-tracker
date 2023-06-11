@@ -10,7 +10,13 @@ pub const Attribute = struct {
     value: []const u8
 };
 
-pub const Content = union(enum) {
+pub const ContentTag = enum {
+    CharData,
+    Comment,
+    Element,
+};
+
+pub const Content = union(ContentTag) {
     CharData: []const u8,
     Comment: []const u8,
     Element: *Element
@@ -55,11 +61,11 @@ pub const Element = struct {
         };
     }
 
-    fn findChildByTag(self: *Element, tag: []const u8) ?*Element {
+    pub fn findChildByTag(self: *Element, tag: []const u8) ?*Element {
         return self.findChildrenByTag(tag).next();
     }
 
-    fn findChildrenByTag(self: *Element, tag: []const u8) FindChildrenByTagIterator {
+    pub fn findChildrenByTag(self: *Element, tag: []const u8) FindChildrenByTagIterator {
         return .{
             .inner = self.children.iterator(0),
             .tag = tag
@@ -70,7 +76,7 @@ pub const Element = struct {
         inner: ContentList.Iterator,
         tag: []const u8,
 
-        fn next(self: *FindChildrenByTagIterator) ?*Element {
+        pub fn next(self: *FindChildrenByTagIterator) ?*Element {
             while (self.inner.next()) |child| {
                 if (child.* != .Element or !mem.eql(u8, child.*.Element.tag, self.tag)) {
                     continue;
