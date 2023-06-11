@@ -426,15 +426,17 @@ fn tryParseElement(ctx: *ParseContext, alloc: *Allocator) !?*Element {
 }
 
 test "tryParseElement" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<= a='b'/>");
         try testing.expectEqual(@as(?*Element, null), try tryParseElement(&ctx, &allocator));
         try testing.expectEqual(@as(?u8, '<'), ctx.peek());
     }
 
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<python size='15' color = \"green\"/>");
         const elem = try tryParseElement(&ctx, &allocator);
         try testing.expectEqualSlices(u8, elem.?.tag, "python");
@@ -449,7 +451,6 @@ test "tryParseElement" {
     }
 
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<python>test</python>");
         const elem = try tryParseElement(&ctx, &allocator);
         try testing.expectEqualSlices(u8, elem.?.tag, "python");
@@ -457,7 +458,6 @@ test "tryParseElement" {
     }
 
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<a>b<c/>d<e/>f<!--g--></a>");
         const elem = try tryParseElement(&ctx, &allocator);
         try testing.expectEqualSlices(u8, elem.?.tag, "a");
@@ -514,15 +514,17 @@ fn tryParseProlog(ctx: *ParseContext, alloc: *Allocator) !?*XmlDecl {
 }
 
 test "tryParseProlog" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<?xmla version='aa'?>");
         try testing.expectEqual(@as(?*XmlDecl, null), try tryParseProlog(&ctx, &allocator));
         try testing.expectEqual(@as(?u8, '<'), ctx.peek());
     }
 
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<?xml version='aa'?>");
         const decl = try tryParseProlog(&ctx, &allocator);
         try testing.expectEqualSlices(u8, "aa", decl.?.version);
@@ -531,7 +533,6 @@ test "tryParseProlog" {
     }
 
     {
-        var allocator = std.testing.allocator;
         var ctx = ParseContext.init("<?xml version=\"aa\" encoding = 'bbb' standalone   \t =   'yes'?>");
         const decl = try tryParseProlog(&ctx, &allocator);
         try testing.expectEqualSlices(u8, "aa", decl.?.version);
@@ -593,7 +594,9 @@ fn dupeAndUnescape(alloc: *Allocator, text: []const u8) ![]const u8 {
 }
 
 test "dupeAndUnescape" {
-    var allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
 
     try testing.expectEqualSlices(u8, "test", try dupeAndUnescape(&allocator, "test"));
     try testing.expectEqualSlices(u8, "a<b&c>d\"e'f<", try dupeAndUnescape(&allocator, "a&lt;b&amp;c&gt;d&quot;e&apos;f&lt;"));

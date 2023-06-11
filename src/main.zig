@@ -20,13 +20,32 @@ pub fn main() !void {
     std.debug.print("Read {d} bytes", .{n});
 }
 
-test "parse open tag without attributes" {
-    var allocator = std.heap.page_allocator;
-    const document = try xml.parse(&allocator, "<revision>13</revision>");
+test "parse protocol xml" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
+    const test_xml = 
+\\<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+\\<ta-tool-export>
+\\    <dv-plan project-id="PROJECT_ID" id="ID">
+\\        <build-result>PROJECT_ID:BUILD_RESULT_ID</build-result>
+\\        <verification-loop>LOOP_ID</verification-loop>
+\\        <protocols>
+\\            <protocol project-id="PROJECT_ID" id="PROTOCOL1_ID">
+\\                <test-script-reference>http://url.to.script1.py</test-script-reference>
+\\            </protocol>
+\\            <protocol project-id="PROJECT_ID" id="PROTOCOL2_ID">
+\\                <test-script-reference>http://url.to.script2.py</test-script-reference>
+\\            </protocol>
+\\        </protocols>
+\\    </dv-plan>
+\\</ta-tool-export>
+    ;
+
+    const document = try xml.parse(&allocator, test_xml);
     defer document.deinit();
 
     const root = document.root;
-    std.debug.print("tag: {s}\n", .{root.tag});
-
-    // try std.testing.expect(std.mem.eql(u8, root.name, "hello"));
+    try std.testing.expect(std.mem.eql(u8, root.tag, "ta-tool-export"));
 }
