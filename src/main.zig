@@ -50,13 +50,12 @@ test "parse protocol xml" {
     try std.testing.expect(std.mem.eql(u8, root.tag, "ta-tool-export"));
     std.debug.print("{d}\n", .{root.children.len});
 
-    // NOTE: findChildrenByTag is not recursive
-    var protocols = root.findChildrenByTag("dv-plan");
-    std.debug.print("Begin WHILE\n", .{});
-    while (protocols.next()) |protocol| {
-        std.debug.print("{s}\n", .{protocol.tag});
-    }
-    std.debug.print("After WHILE\n", .{});
+    // var elements = root.elements();
+    // while (elements.next()) |elem| {
+    //     std.debug.print("{s}\n", .{elem.tag});
+    // }
+
+    root.allElements();
 
     try std.testing.expect(root.children.len == 1);
 }

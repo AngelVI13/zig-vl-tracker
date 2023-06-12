@@ -1,3 +1,4 @@
+// taken from https://github.com/Snektron/vulkan-zig/blob/master/generator/xml.zig
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
@@ -53,6 +54,15 @@ pub const Element = struct {
         return .{
             .inner = self.iterator(),
         };
+    }
+
+    // TODO: return list of all elements including current one
+    pub fn allElements(self: Element) void {
+        var children = self.elements();
+        while (children.next()) |child| {
+            std.debug.print("{s}\n", .{child.tag});
+            child.allElements();
+        }
     }
 
     pub fn findChildByTag(self: Element, tag: []const u8) ?*Element {
