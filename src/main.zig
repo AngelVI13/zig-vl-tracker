@@ -43,7 +43,7 @@ test "parse protocol xml" {
 \\</ta-tool-export>
     ;
 
-    const document = try xml.parse(&allocator, test_xml);
+    const document = try xml.parse(allocator, test_xml);
     defer document.deinit();
 
     const root = document.root;
