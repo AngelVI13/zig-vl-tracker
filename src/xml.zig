@@ -56,12 +56,14 @@ pub const Element = struct {
         };
     }
 
-    // TODO: return list of all elements including current one
-    pub fn allElements(self: Element) void {
+    pub fn allElements(self: *Element, elems: *std.ArrayList(*Element), tag: []const u8) !void {
+        if (mem.eql(u8, self.tag, tag)) {
+            try elems.append(self);
+        }
+
         var children = self.elements();
         while (children.next()) |child| {
-            std.debug.print("{s}\n", .{child.tag});
-            child.allElements();
+            try child.allElements(elems, tag);
         }
     }
 

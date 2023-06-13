@@ -50,12 +50,18 @@ test "parse protocol xml" {
     try std.testing.expect(std.mem.eql(u8, root.tag, "ta-tool-export"));
     std.debug.print("{d}\n", .{root.children.len});
 
-    // var elements = root.elements();
-    // while (elements.next()) |elem| {
-    //     std.debug.print("{s}\n", .{elem.tag});
-    // }
+    var list = std.ArrayList(*xml.Element).init(std.testing.allocator);
+    defer list.deinit();
 
-    root.allElements();
+    try root.allElements(&list, "protocol");
+
+    for (list.items, 0..) |elem, idx| {
+        std.debug.print("{d} {} {s}\n", .{idx, @TypeOf(elem), elem.tag});
+
+        if (elem.getAttribute("id")) |id| {
+            std.debug.print("{s}\n", .{id});
+        }
+    }
 
     try std.testing.expect(root.children.len == 1);
 }
