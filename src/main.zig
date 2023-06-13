@@ -48,7 +48,6 @@ test "parse protocol xml" {
 
     const root = document.root;
     try std.testing.expect(std.mem.eql(u8, root.tag, "ta-tool-export"));
-    std.debug.print("{d}\n", .{root.children.len});
 
     var list = std.ArrayList(*xml.Element).init(std.testing.allocator);
     defer list.deinit();
