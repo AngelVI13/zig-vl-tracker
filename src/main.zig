@@ -1,6 +1,10 @@
 const std = @import("std");
 const xml = @import("xml.zig");
 
+
+const mem = std.mem;
+const Allocator = mem.Allocator;
+
 const master_xml = "src/master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
@@ -17,7 +21,38 @@ pub fn main() !void {
     var buf: [1 * megabyte]u8 = undefined;
     var n = try in_stream.readAll(&buf);
 
-    std.debug.print("Read {d} bytes", .{n});
+    std.debug.print("Read {d} bytes\n", .{n});
+    var xml_text = buf[0..n];
+
+    var list = try getProtocolsFromXml(xml_text);
+    std.debug.print("list len: {d}\n", .{list.len});
+
+    for (list, 0..) |elem, idx| {
+        std.debug.print("{d} {} {s}\n", .{idx, @TypeOf(elem), elem.tag});
+
+        // if (elem.getAttribute("id")) |id| {
+        //     std.debug.print("{s}\n", .{id});
+        // }
+    }
+}
+
+pub fn getProtocolsFromXml(xml_text: []const u8) ![]xml.Element {
+    var alloc = std.heap.page_allocator;
+
+    std.debug.print("{s}\n", .{xml_text});
+    const document = try xml.parse(alloc, xml_text);
+    // TODO: does this drop all document elements ?
+    defer document.deinit();
+
+    const root = document.root;
+
+    var list = std.ArrayList(xml.Element).init(alloc);
+    defer list.deinit();
+
+    // TODO: how to handle errors? Do i have to deinit the allocator if allElements throws error?
+    try root.allElements(&list, "protocol");
+
+    return list.toOwnedSlice();
 }
 
 test "parse protocol xml" {
