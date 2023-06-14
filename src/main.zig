@@ -9,22 +9,13 @@ const master_xml = "src/master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var xml_text = try readFile(master_xml);
 
-    var file = try std.fs.cwd().openFile(master_xml, .{});
-    defer file.close();
+    var alloc = std.heap.page_allocator;
+    const xml_document = try xml.parse(alloc, xml_text);
+    defer xml_document.deinit();
 
-    var buf_reader = std.io.bufferedReader(file.reader());
-    var in_stream = buf_reader.reader();
-
-    var buf: [1 * megabyte]u8 = undefined;
-    var n = try in_stream.readAll(&buf);
-
-    std.debug.print("Read {d} bytes\n", .{n});
-    var xml_text = buf[0..n];
-
-    var list = try getProtocolsFromXml(xml_text);
+    var list = try getProtocolsFromXml(alloc, xml_document.root);
     std.debug.print("list len: {d}\n", .{list.len});
 
     for (list, 0..) |elem, idx| {
@@ -36,20 +27,31 @@ pub fn main() !void {
     }
 }
 
-pub fn getProtocolsFromXml(xml_text: []const u8) ![]xml.Element {
-    var alloc = std.heap.page_allocator;
+const ReadFileError = error {
+    FileTooBig,
+};
 
-    std.debug.print("{s}\n", .{xml_text});
-    const document = try xml.parse(alloc, xml_text);
-    // TODO: does this drop all document elements ?
-    defer document.deinit();
+pub fn readFile(filename: []const u8) ![]const u8 {
+    var file = try std.fs.cwd().openFile(filename, .{});
+    defer file.close();
 
-    const root = document.root;
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var in_stream = buf_reader.reader();
 
+    const buf_size = 1 * megabyte;
+    var buf: [buf_size]u8 = undefined;
+    var n = try in_stream.readAll(&buf);
+    if (n >= buf_size) {
+        return error.FileTooBig;
+    }
+
+    return buf[0..n];
+}
+
+pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) ![]xml.Element {
     var list = std.ArrayList(xml.Element).init(alloc);
     defer list.deinit();
 
-    // TODO: how to handle errors? Do i have to deinit the allocator if allElements throws error?
     try root.allElements(&list, "protocol");
 
     return list.toOwnedSlice();
