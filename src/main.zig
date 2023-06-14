@@ -5,7 +5,8 @@ const xml = @import("xml.zig");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
-const master_xml = "src/master_cleaning.xml";
+const root_dir = "src";
+const master_xml = root_dir ++ "/" ++ "master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
 pub fn main() !void {
@@ -18,13 +19,8 @@ pub fn main() !void {
     var list = try getProtocolsFromXml(alloc, xml_document.root);
     std.debug.print("list len: {d}\n", .{list.len});
 
-    for (list, 0..) |elem, idx| {
-        std.debug.print("{d} {} {s}\n", .{idx, @TypeOf(elem), elem.tag});
-
-        // if (elem.getAttribute("id")) |id| {
-        //     std.debug.print("{s}\n", .{id});
-        // }
-    }
+    var result = try getTestsFromDir(alloc, "src");
+    std.debug.print("passed: {s}\nfailed: {s}\n", .{result.passed, result.failed});
 }
 
 const ReadFileError = error {
@@ -55,6 +51,47 @@ pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) ![]xml.Element 
     try root.allElements(&list, "protocol");
 
     return list.toOwnedSlice();
+}
+
+
+pub const GetTestsFromDirResult = struct {
+    passed: []const []const u8,
+    failed: []const []const u8,
+};
+
+pub fn getTestsFromDir(alloc: Allocator, path: []const u8) !GetTestsFromDirResult {
+    var dir = try std.fs.cwd().openIterableDir(path, .{});
+    defer dir.close();
+
+    var walker = try dir.walk(alloc);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        std.debug.print("{s} {s}\n", .{entry.basename, entry.path});
+    }
+
+    var map = std.StringHashMap(u8).init(alloc);
+    defer map.deinit();
+
+    var passed = std.ArrayList([]const u8).init(alloc);
+    defer passed.deinit();
+
+    var failed = std.ArrayList([]const u8).init(alloc);
+    defer failed.deinit();
+
+    // try map.put(1600, .{ .x = 4, .y = -1 });
+    // try expect(map.count() == 4);
+    // var sum = Point{ .x = 0, .y = 0 };
+    // var iterator = map.iterator();
+    // while (iterator.next()) |entry| {
+    //     sum.x += entry.value_ptr.x;
+    //     sum.y += entry.value_ptr.y;
+    // }
+
+    return GetTestsFromDirResult{
+        .passed = try passed.toOwnedSlice(),
+        .failed = try failed.toOwnedSlice(),
+    };
 }
 
 test "parse protocol xml" {
