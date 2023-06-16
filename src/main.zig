@@ -12,6 +12,8 @@ const root_dir = "src";
 const master_xml = root_dir ++ "/" ++ "master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
+const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
@@ -24,7 +26,10 @@ pub fn main() !void {
     var list = try getProtocolsFromXml(alloc, xml_document.root);
     std.debug.print("list len: {d}\n", .{list.len});
 
-    var result = try getTestsFromDir(alloc, "src");
+
+    var re = try Regex.compile(alloc, filename_pattern);
+    defer re.deinit();
+    var result = try getTestsFromDir(alloc, re, "src");
     std.debug.print("passed: {s}\nfailed: {s}\n", .{ result.passed, result.failed });
 }
 
@@ -64,7 +69,7 @@ pub const GetTestsFromDirResult = struct {
 };
 
 // TODO: Path parameter should be the CWD
-pub fn getTestsFromDir(alloc: Allocator, path: []const u8) !GetTestsFromDirResult {
+pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTestsFromDirResult {
     var dir = try std.fs.cwd().openIterableDir(path, .{});
     defer dir.close();
 
@@ -74,6 +79,8 @@ pub fn getTestsFromDir(alloc: Allocator, path: []const u8) !GetTestsFromDirResul
     while (try walker.next()) |entry| {
         // TODO: process filenames here
         std.debug.print("{s} {s}\n", .{ entry.basename, entry.path });
+        const result = getInfoFromFilename(re, entry.basename);
+        _ = result;
     }
 
     var passedMap = std.StringHashMap(u8).init(alloc);
@@ -101,6 +108,25 @@ pub fn getTestsFromDir(alloc: Allocator, path: []const u8) !GetTestsFromDirResul
         .passed = try passed.toOwnedSlice(),
         .failed = try failed.toOwnedSlice(),
     };
+}
+
+const TestStatus = struct{
+    tc_id: []const u8,
+    status: []const u8,  // TODO: make this into enum
+};
+
+fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
+    // TODO: this is not needed cause captures does the same
+    try std.testing.expect(try re.partialMatch(filename) == true);
+
+    var captures = try re.captures(filename) orelse unreachable;
+    defer captures.deinit();
+
+    const tc_id = captures.sliceAt(1) orelse unreachable;
+    try std.testing.expectEqualStrings(tc_id, "4AP2-38205");
+
+    const status = captures.sliceAt(2) orelse unreachable;
+    try std.testing.expectEqualStrings(status, "PASS");
 }
 
 test "parse protocol xml" {
@@ -150,7 +176,6 @@ test "parse protocol xml" {
 
 test "regex simple pattern match" {
     // const filename_pattern = "report_(?P<id>[a-zA-Z0-9]+-\\d+)_(?P<status>[A-Z]+)_.*";
-    const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
     var re = try Regex.compile(std.testing.allocator, filename_pattern);
     defer re.deinit();
 
@@ -162,5 +187,8 @@ test "regex simple pattern match" {
 
     const tc_id = captures.sliceAt(1) orelse unreachable;
     try std.testing.expectEqualStrings(tc_id, "4AP2-38205");
+
+    const status = captures.sliceAt(2) orelse unreachable;
+    try std.testing.expectEqualStrings(status, "PASS");
 }
 
