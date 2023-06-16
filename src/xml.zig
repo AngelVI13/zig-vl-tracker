@@ -56,7 +56,7 @@ pub const Element = struct {
         };
     }
 
-    pub fn allElements(self: Element, elems: *std.ArrayList(Element), tag: []const u8) !void {
+    pub fn allElements(self: *Element, elems: *std.ArrayList(*Element), tag: []const u8) !void {
         if (mem.eql(u8, self.tag, tag)) {
             try elems.append(self);
         }

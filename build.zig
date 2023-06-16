@@ -15,6 +15,10 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const module = b.addModule("regex", .{
+        .source_file = .{ .path = "include/zig-regex/src/regex.zig" },
+    });
+
     const exe = b.addExecutable(.{
         .name = "zig-vl-tracker",
         // In this case the main source file is merely a path, however, in more
@@ -25,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     exe.addIncludePath("include");
+    exe.addModule("regex", module);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -63,6 +68,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     unit_tests.addIncludePath("include");
+    unit_tests.addModule("regex", module);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 

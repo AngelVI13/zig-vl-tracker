@@ -1,9 +1,8 @@
 const std = @import("std");
 const xml = @import("xml.zig");
 
-const re = @cImport(@cInclude("regez.h"));
-const REGEX_T_ALIGNOF = re.sizeof_regex_t;
-const REGEX_T_SIZEOF = re.alignof_regex_t;
+// NOTE: clone this: https://github.com/tiehuis/zig-regex.git
+const Regex = @import("regex").Regex;
 
 const mem = std.mem;
 const Allocator = mem.Allocator;
@@ -49,9 +48,8 @@ pub fn readFile(filename: []const u8) ![]const u8 {
     return buf[0..n];
 }
 
-pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) ![]xml.Element {
-    // TODO: should it be *xml.Element
-    var list = std.ArrayList(xml.Element).init(alloc);
+pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) ![]*xml.Element {
+    var list = std.ArrayList(*xml.Element).init(alloc);
     defer list.deinit();
 
     try root.allElements(&list, "protocol");
@@ -130,69 +128,26 @@ test "parse protocol xml" {
     const root = document.root;
     try std.testing.expect(std.mem.eql(u8, root.tag, "ta-tool-export"));
 
-    var list = std.ArrayList(xml.Element).init(std.testing.allocator);
+    var list = std.ArrayList(*xml.Element).init(std.testing.allocator);
     defer list.deinit();
 
     try root.allElements(&list, "protocol");
 
-    for (list.items, 0..) |elem, idx| {
-        std.debug.print("{d} {} {s}\n", .{ idx, @TypeOf(elem), elem.tag });
+    try std.testing.expect(list.items.len == 2);
 
-        if (elem.getAttribute("id")) |id| {
-            std.debug.print("{s}\n", .{id});
-        }
-    }
+    // for (list.items, 0..) |elem, idx| {
+    //     std.debug.print("{d} {} {s}\n", .{ idx, @TypeOf(elem), elem.tag });
 
-    try std.testing.expect(root.children.len == 1);
+    //     if (elem.getAttribute("id")) |id| {
+    //         std.debug.print("{s}\n", .{id});
+    //     }
+    // }
 }
 
 test "regex simple pattern match" {
-    const allocator = std.testing.allocator;
+    var re = try Regex.compile(std.testing.allocator, "\\w+");
+    defer re.deinit();
 
-    var slice = try allocator.alignedAlloc(u8, REGEX_T_ALIGNOF, REGEX_T_SIZEOF);
-    const regex = @ptrCast(*re.regex_t, slice.ptr);
-    defer allocator.free(@ptrCast([*]u8, regex)[0..REGEX_T_SIZEOF]);
-
-    const result = re.regcomp(regex, "[ab]c", re.REG_EXTENDED | re.REG_ICASE);
-    defer re.regfree(regex); // IMPORTANT!!
-
-    try std.testing.expect(result == 0);
-
-    // prints true
-    std.debug.print("{any}\n", .{re.isMatch(regex, "ac")});
-
-    // prints false
-    std.debug.print("{any}\n", .{re.isMatch(regex, "nope")});
-
-    std.testing.expect(true, re.isMatch(regex, "ac"));
-    std.testing.expect(false, re.isMatch(regex, "nope"));
+    try std.testing.expect(try re.match("hej") == true);
 }
 
-test "regex complex pattern match" {
-    const allocator = std.testing.allocator;
-
-    var slice = try allocator.alignedAlloc(u8, REGEX_T_ALIGNOF, REGEX_T_SIZEOF);
-    const regex = @ptrCast(*re.regex_t, slice.ptr);
-    defer allocator.free(@ptrCast([*]u8, regex)[0..REGEX_T_SIZEOF]);
-
-    const result = re.regcomp(regex, "hello ?([[:alpha:]]*)", re.REG_EXTENDED | re.REG_ICASE);
-    defer re.regfree(regex); // IMPORTANT!!
-
-    try std.testing.expect(result == 0);
-
-    const input = "hello Teg!";
-    var matches: [5]re.regmatch_t = undefined;
-
-    result = re.regexec(regex, input, matches.len, &matches, 0);
-    try std.testing.expect(result == 0);
-
-    for (matches, 0..) |m, i| {
-        const start_offset = m.rm_so;
-        if (start_offset == -1) break;
-
-        const end_offset = m.rm_eo;
-
-        const match = input[@intCast(usize, start_offset)..@intCast(usize, end_offset)];
-        std.debug.print("matches[{d}] = {s}\n", .{ i, match });
-    }
-}
