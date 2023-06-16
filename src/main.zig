@@ -26,10 +26,9 @@ pub fn main() !void {
     var list = try getProtocolsFromXml(alloc, xml_document.root);
     std.debug.print("list len: {d}\n", .{list.len});
 
-
     var re = try Regex.compile(alloc, filename_pattern);
     defer re.deinit();
-    var result = try getTestsFromDir(alloc, re, "src");
+    var result = try getTestsFromDir(alloc, &re, "src");
     std.debug.print("passed: {s}\nfailed: {s}\n", .{ result.passed, result.failed });
 }
 
@@ -70,6 +69,16 @@ pub const GetTestsFromDirResult = struct {
 
 // TODO: Path parameter should be the CWD
 pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTestsFromDirResult {
+    var passedMap = std.StringHashMap(u8).init(alloc);
+    // TODO: how to make the resize happen on .put instead of beforehand
+    try passedMap.ensureTotalCapacity(1000);
+    defer passedMap.deinit();
+
+    var failedMap = std.StringHashMap(u8).init(alloc);
+    // TODO: how to make the resize happen on .put instead of beforehand
+    try failedMap.ensureTotalCapacity(1000);
+    defer failedMap.deinit();
+
     var dir = try std.fs.cwd().openIterableDir(path, .{});
     defer dir.close();
 
@@ -77,17 +86,27 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
     defer walker.deinit();
 
     while (try walker.next()) |entry| {
-        // TODO: process filenames here
-        std.debug.print("{s} {s}\n", .{ entry.basename, entry.path });
-        const result = getInfoFromFilename(re, entry.basename);
-        _ = result;
+        const res = try getInfoFromFilename(re, entry.basename);
+        if (res == null) {
+            continue;
+        }
+        const result = res.?;
+
+        if (std.mem.eql(u8, result.status, "PASS")) {
+            if (passedMap.get(result.tc_id) == null) {
+                try passedMap.put(result.tc_id, 0);
+            }
+        } else {
+            if (failedMap.get(result.tc_id)) |_| {
+                // TODO: add to duplicates
+            } else {
+                try failedMap.put(result.tc_id, 0);
+            }
+        }
     }
 
-    var passedMap = std.StringHashMap(u8).init(alloc);
-    defer passedMap.deinit();
-
-    var failedMap = std.StringHashMap(u8).init(alloc);
-    defer failedMap.deinit();
+    std.debug.print("Passed {?}\n", .{passedMap.count()});
+    std.debug.print("Failed {?}\n", .{failedMap.count()});
 
     var passed = std.ArrayList([]const u8).init(alloc);
     defer passed.deinit();
@@ -95,38 +114,28 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
     var failed = std.ArrayList([]const u8).init(alloc);
     defer failed.deinit();
 
-    // try map.put(1600, .{ .x = 4, .y = -1 });
-    // try expect(map.count() == 4);
-    // var sum = Point{ .x = 0, .y = 0 };
-    // var iterator = map.iterator();
-    // while (iterator.next()) |entry| {
-    //     sum.x += entry.value_ptr.x;
-    //     sum.y += entry.value_ptr.y;
-    // }
-
     return GetTestsFromDirResult{
         .passed = try passed.toOwnedSlice(),
         .failed = try failed.toOwnedSlice(),
     };
 }
 
-const TestStatus = struct{
+const TestStatus = struct {
     tc_id: []const u8,
-    status: []const u8,  // TODO: make this into enum
+    status: []const u8, // TODO: make this into enum
 };
 
 fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
-    // TODO: this is not needed cause captures does the same
-    try std.testing.expect(try re.partialMatch(filename) == true);
-
-    var captures = try re.captures(filename) orelse unreachable;
+    var captures = try re.captures(filename) orelse return null;
     defer captures.deinit();
 
-    const tc_id = captures.sliceAt(1) orelse unreachable;
-    try std.testing.expectEqualStrings(tc_id, "4AP2-38205");
+    const tc_id = captures.sliceAt(1) orelse return null;
+    const status = captures.sliceAt(2) orelse return null;
 
-    const status = captures.sliceAt(2) orelse unreachable;
-    try std.testing.expectEqualStrings(status, "PASS");
+    return .{
+        .tc_id = tc_id,
+        .status = status,
+    };
 }
 
 test "parse protocol xml" {
@@ -191,4 +200,3 @@ test "regex simple pattern match" {
     const status = captures.sliceAt(2) orelse unreachable;
     try std.testing.expectEqualStrings(status, "PASS");
 }
-
