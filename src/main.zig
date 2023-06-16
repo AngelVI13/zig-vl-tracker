@@ -2,6 +2,7 @@ const std = @import("std");
 const xml = @import("xml.zig");
 
 // NOTE: clone this: https://github.com/tiehuis/zig-regex.git
+// to ./include folder
 const Regex = @import("regex").Regex;
 
 const mem = std.mem;
@@ -75,8 +76,11 @@ pub fn getTestsFromDir(alloc: Allocator, path: []const u8) !GetTestsFromDirResul
         std.debug.print("{s} {s}\n", .{ entry.basename, entry.path });
     }
 
-    var map = std.StringHashMap(u8).init(alloc);
-    defer map.deinit();
+    var passedMap = std.StringHashMap(u8).init(alloc);
+    defer passedMap.deinit();
+
+    var failedMap = std.StringHashMap(u8).init(alloc);
+    defer failedMap.deinit();
 
     var passed = std.ArrayList([]const u8).init(alloc);
     defer passed.deinit();
@@ -145,9 +149,18 @@ test "parse protocol xml" {
 }
 
 test "regex simple pattern match" {
-    var re = try Regex.compile(std.testing.allocator, "\\w+");
+    // const filename_pattern = "report_(?P<id>[a-zA-Z0-9]+-\\d+)_(?P<status>[A-Z]+)_.*";
+    const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
+    var re = try Regex.compile(std.testing.allocator, filename_pattern);
     defer re.deinit();
 
-    try std.testing.expect(try re.match("hej") == true);
+    const example_filename = "report_4AP2-38205_PASS_2022_04_19_17h_51m.xml";
+    try std.testing.expect(try re.partialMatch(example_filename) == true);
+
+    var captures = try re.captures(example_filename) orelse unreachable;
+    defer captures.deinit();
+
+    const tc_id = captures.sliceAt(1) orelse unreachable;
+    try std.testing.expectEqualStrings(tc_id, "4AP2-38205");
 }
 
