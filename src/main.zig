@@ -79,6 +79,9 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
     try failedMap.ensureTotalCapacity(1000);
     defer failedMap.deinit();
 
+    var failedDuplicates = std.ArrayList([]const u8).init(alloc);
+    defer failedDuplicates.deinit();
+
     var dir = try std.fs.cwd().openIterableDir(path, .{});
     defer dir.close();
 
@@ -98,21 +101,40 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
             }
         } else {
             if (failedMap.get(result.tc_id)) |_| {
-                // TODO: add to duplicates
+                try failedDuplicates.append(result.tc_id);
             } else {
                 try failedMap.put(result.tc_id, 0);
             }
         }
     }
 
-    std.debug.print("Passed {?}\n", .{passedMap.count()});
-    std.debug.print("Failed {?}\n", .{failedMap.count()});
+
+    var failedThatPassed = std.ArrayList([]const u8).init(alloc);
+    defer failedThatPassed.deinit();
 
     var passed = std.ArrayList([]const u8).init(alloc);
     defer passed.deinit();
 
     var failed = std.ArrayList([]const u8).init(alloc);
     defer failed.deinit();
+
+    var failedKeyIterator = failedMap.keyIterator();
+    while (failedKeyIterator.next()) |key| {
+        if (passedMap.get(key.*)) |_| {
+            try failedThatPassed.append(key.*);
+            continue;
+        }
+
+        try failed.append(key.*);
+    }
+
+    std.debug.print("Failed TCs that later passed: {?}\n", .{failedThatPassed});
+    std.debug.print("Failed Multiple Times: {?}\n", .{failedDuplicates});
+
+    var passedKeyIterator = passedMap.keyIterator();
+    while (passedKeyIterator.next()) |key| {
+        try passed.append(key.*);
+    }
 
     return GetTestsFromDirResult{
         .passed = try passed.toOwnedSlice(),
