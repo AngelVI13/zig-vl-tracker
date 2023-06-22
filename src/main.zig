@@ -42,6 +42,9 @@ pub fn main() !void {
     std.debug.print("Passed: {d}\n", .{passedProtocols.len});
     std.debug.print("Failed: {d}\n", .{failedProtocols.len});
     std.debug.print("Remaining: {d}\n", .{remainingProtocols.len});
+
+    var out = try makePolarionXmlText(xml_text, remainingProtocols);
+    _ = out;
 }
 
 const ReadFileError = error{
@@ -245,6 +248,25 @@ fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml
         }
     }
     return remaining.toOwnedSlice();
+}
+
+fn makePolarionXmlText(master_xml_txt: []const u8, protocols: []*xml.Element) ![]const u8 {
+    _ = protocols;
+    const protocols_start = "<protocols>";
+    const protocols_end = "</protocols>";
+
+    const protocols_start_idx = std.mem.indexOf(u8, master_xml_txt, protocols_start);
+    const protocols_end_idx = std.mem.indexOf(u8, master_xml_txt, protocols_end);
+    if ((protocols_start_idx == null) or (protocols_end_idx == null)) {
+        // TODO: throw error
+        return "";
+    }
+    const start_idx = protocols_start_idx.? + protocols_start.len;
+    const end_idx = protocols_end_idx.?;
+    std.debug.print("\n{} {} {}\n", .{protocols_start_idx.?, start_idx, end_idx});
+
+    std.debug.print("{s}\n", .{master_xml_txt[0..protocols_start_idx.?]});
+    return "";
 }
 
 test "parse protocol xml" {
