@@ -70,13 +70,9 @@ pub const GetTestsFromDirResult = struct {
 // TODO: Path parameter should be the CWD
 pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTestsFromDirResult {
     var passedMap = std.StringHashMap(u8).init(alloc);
-    // TODO: how to make the resize happen on .put instead of beforehand
-    try passedMap.ensureTotalCapacity(1000);
     defer passedMap.deinit();
 
     var failedMap = std.StringHashMap(u8).init(alloc);
-    // TODO: how to make the resize happen on .put instead of beforehand
-    try failedMap.ensureTotalCapacity(1000);
     defer failedMap.deinit();
 
     var failedDuplicates = std.ArrayList([]const u8).init(alloc);
