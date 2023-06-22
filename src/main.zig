@@ -15,6 +15,7 @@ const megabyte = 1024 * 1024;
 const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
 
 pub fn main() !void {
+    std.debug.print("\nProcessing...\n", .{});
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
 
@@ -25,21 +26,22 @@ pub fn main() !void {
 
     var protocolsMap = try getProtocolsFromXml(alloc, xml_document.root);
     defer protocolsMap.deinit();
-    std.debug.print("\nprotocolsMap len: {d}\n", .{protocolsMap.count()});
 
     var tc_filename_re = try Regex.compile(alloc, filename_pattern);
     defer tc_filename_re.deinit();
 
     var result = try getTestsFromDir(alloc, &tc_filename_re, "src");
-    std.debug.print("Found Passed TCs: #{d}: {s}\n", .{ result.passed.len, result.passed });
-    std.debug.print("Found Failed TCs: #{d}: {s}\n", .{ result.failed.len, result.failed });
+    std.debug.print("Found Passed TCs: {s}", .{result.passed});
+    std.debug.print("Found Failed TCs: {s}", .{result.failed});
 
     var passedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.passed);
-    defer passedProtocols.deinit();
     var failedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.failed);
-    defer failedProtocols.deinit();
-    std.debug.print("Passed protocols map: {d}\n", .{passedProtocols.items.len});
-    std.debug.print("Failed protocols map: {d}\n", .{failedProtocols.items.len});
+
+    var remainingProtocols = try getRemainingProtocols(alloc, &protocolsMap, passedProtocols, failedProtocols);
+    std.debug.print("Master: {d}\n", .{protocolsMap.count()});
+    std.debug.print("Passed: {d}\n", .{passedProtocols.len});
+    std.debug.print("Failed: {d}\n", .{failedProtocols.len});
+    std.debug.print("Remaining: {d}\n", .{remainingProtocols.len});
 }
 
 const ReadFileError = error{
@@ -177,20 +179,22 @@ fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
 }
 
 /// Caller owns the returned data
-fn getProtocolsFromIds(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), tcIds: []const []const u8) !std.ArrayList(*xml.Element) {
+fn getProtocolsFromIds(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), tcIds: []const []const u8) ![]*xml.Element {
     var list = std.ArrayList(*xml.Element).init(alloc);
+    defer list.deinit();
 
     for (tcIds) |tcId| {
         if (protocolsMap.get(tcId)) |xml_elem| {
             try list.append(xml_elem);
         }
     }
-    return list;
+    return list.toOwnedSlice();
 }
 
 /// Caller owns the returned data
-fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), passed: *std.ArrayList(*xml.Element), failed: *std.ArrayList(*xml.Element)) std.ArrayList(*xml.Element) {
+fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), passed: []*xml.Element, failed: []*xml.Element) ![]*xml.Element {
     var remaining = std.ArrayList(*xml.Element).init(alloc);
+    defer remaining.deinit();
 
     var seenMap = std.StringHashMap(u8).init(alloc);
     defer seenMap.deinit();
@@ -205,6 +209,9 @@ fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml
         }
     }
 
+    // TODO: this is inefficient - i already had a map of tc_id -> *xml.Element for passed and failed elems
+    // There is no need to convert it to a slice of *xml.Element and here search for the ID attribute of each xml.Element
+    // Keep it like this for now for fair 1:1 comparison between the Go version and Zig
     for (passed) |xml_elem| {
         if (xml_elem.getAttribute("id")) |tc_id| {
             var result = try seenMap.getOrPut(tc_id);
@@ -227,7 +234,17 @@ fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml
         }
     }
 
-    _ = remaining;
+    var seenIter = seenMap.iterator();
+    while (seenIter.next()) |entry| {
+        if (entry.value_ptr.* != 0) {
+            continue;
+        }
+
+        if (protocolsMap.get(entry.key_ptr.*)) |xml_elem| {
+            try remaining.append(xml_elem);
+        }
+    }
+    return remaining.toOwnedSlice();
 }
 
 test "parse protocol xml" {
