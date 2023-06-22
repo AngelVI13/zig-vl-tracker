@@ -94,16 +94,17 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
             continue;
         }
         const result = res.?;
+        const tc_id = try alloc.dupe(u8, result.tc_id);
 
         if (std.mem.eql(u8, result.status, "PASS")) {
-            if (passedMap.get(result.tc_id) == null) {
-                try passedMap.put(result.tc_id, 0);
+            if (passedMap.get(tc_id) == null) {
+                try passedMap.put(tc_id, 0);
             }
         } else {
-            if (failedMap.get(result.tc_id)) |_| {
-                try failedDuplicates.append(result.tc_id);
+            if (failedMap.get(tc_id)) |_| {
+                try failedDuplicates.append(tc_id);
             } else {
-                try failedMap.put(result.tc_id, 0);
+                try failedMap.put(tc_id, 0);
             }
         }
     }
@@ -128,8 +129,8 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
         try failed.append(key.*);
     }
 
-    std.debug.print("Failed TCs that later passed: {?}\n", .{failedThatPassed});
-    std.debug.print("Failed Multiple Times: {?}\n", .{failedDuplicates});
+    std.debug.print("Failed TCs that later passed: {s}\n", .{try failedThatPassed.toOwnedSlice()});
+    std.debug.print("Failed Multiple Times: {s}\n", .{try failedDuplicates.toOwnedSlice()});
 
     var passedKeyIterator = passedMap.keyIterator();
     while (passedKeyIterator.next()) |key| {
