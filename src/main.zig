@@ -23,13 +23,23 @@ pub fn main() !void {
     const xml_document = try xml.parse(alloc, xml_text);
     defer xml_document.deinit();
 
-    var list = try getProtocolsFromXml(alloc, xml_document.root);
-    std.debug.print("list len: {d}\n", .{list.len});
+    var protocolsMap = try getProtocolsFromXml(alloc, xml_document.root);
+    defer protocolsMap.deinit();
+    std.debug.print("\nprotocolsMap len: {d}\n", .{protocolsMap.count()});
 
-    var re = try Regex.compile(alloc, filename_pattern);
-    defer re.deinit();
-    var result = try getTestsFromDir(alloc, &re, "src");
-    std.debug.print("passed: {s}\nfailed: {s}\n", .{ result.passed, result.failed });
+    var tc_filename_re = try Regex.compile(alloc, filename_pattern);
+    defer tc_filename_re.deinit();
+
+    var result = try getTestsFromDir(alloc, &tc_filename_re, "src");
+    std.debug.print("Found Passed TCs: #{d}: {s}\n", .{ result.passed.len, result.passed });
+    std.debug.print("Found Failed TCs: #{d}: {s}\n", .{ result.failed.len, result.failed });
+
+    var passedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.passed);
+    defer passedProtocols.deinit();
+    var failedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.failed);
+    defer failedProtocols.deinit();
+    std.debug.print("Passed protocols map: {d}\n", .{passedProtocols.items.len});
+    std.debug.print("Failed protocols map: {d}\n", .{failedProtocols.items.len});
 }
 
 const ReadFileError = error{
@@ -53,13 +63,23 @@ pub fn readFile(filename: []const u8) ![]const u8 {
     return buf[0..n];
 }
 
-pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) ![]*xml.Element {
+/// Get a map with TC ids as keys and pointer to xml element as values.
+/// The caller owns the data and is responsible for `.deinit()`
+pub fn getProtocolsFromXml(alloc: Allocator, root: *xml.Element) !std.StringHashMap(*xml.Element) {
     var list = std.ArrayList(*xml.Element).init(alloc);
     defer list.deinit();
 
     try root.allElements(&list, "protocol");
 
-    return list.toOwnedSlice();
+    // TODO: maybe the map should contain a pointer to custom elem that holds all data?
+    var passedMap = std.StringHashMap(*xml.Element).init(alloc);
+    for (list.items) |protocol| {
+        if (protocol.getAttribute("id")) |tc_id| {
+            try passedMap.put(tc_id, protocol);
+        }
+    }
+
+    return passedMap;
 }
 
 pub const GetTestsFromDirResult = struct {
@@ -104,7 +124,6 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
             }
         }
     }
-
 
     var failedThatPassed = std.ArrayList([]const u8).init(alloc);
     defer failedThatPassed.deinit();
@@ -155,6 +174,60 @@ fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
         .tc_id = tc_id,
         .status = status,
     };
+}
+
+/// Caller owns the returned data
+fn getProtocolsFromIds(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), tcIds: []const []const u8) !std.ArrayList(*xml.Element) {
+    var list = std.ArrayList(*xml.Element).init(alloc);
+
+    for (tcIds) |tcId| {
+        if (protocolsMap.get(tcId)) |xml_elem| {
+            try list.append(xml_elem);
+        }
+    }
+    return list;
+}
+
+/// Caller owns the returned data
+fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), passed: *std.ArrayList(*xml.Element), failed: *std.ArrayList(*xml.Element)) std.ArrayList(*xml.Element) {
+    var remaining = std.ArrayList(*xml.Element).init(alloc);
+
+    var seenMap = std.StringHashMap(u8).init(alloc);
+    defer seenMap.deinit();
+
+    var protocolsKeyIter = protocolsMap.keyIterator();
+    while (protocolsKeyIter.next()) |tc_id| {
+        var result = try seenMap.getOrPut(tc_id.*);
+        if (result.found_existing) {
+            result.value_ptr.* += 1;
+        } else {
+            result.value_ptr.* = 0;
+        }
+    }
+
+    for (passed) |xml_elem| {
+        if (xml_elem.getAttribute("id")) |tc_id| {
+            var result = try seenMap.getOrPut(tc_id);
+            if (result.found_existing) {
+                result.value_ptr.* += 1;
+            } else {
+                result.value_ptr.* = 0;
+            }
+        }
+    }
+
+    for (failed) |xml_elem| {
+        if (xml_elem.getAttribute("id")) |tc_id| {
+            var result = try seenMap.getOrPut(tc_id);
+            if (result.found_existing) {
+                result.value_ptr.* += 1;
+            } else {
+                result.value_ptr.* = 0;
+            }
+        }
+    }
+
+    _ = remaining;
 }
 
 test "parse protocol xml" {
