@@ -13,6 +13,9 @@ const master_xml = root_dir ++ "/" ++ "master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
 const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
+const PassedXML    = "passed.xml";
+const FailedXML    = "failed.xml";
+const RemainingXML = "remaining.xml";
 
 pub fn main() !void {
     std.debug.print("\nProcessing...\n", .{});
@@ -43,8 +46,23 @@ pub fn main() !void {
     std.debug.print("Failed: {d}\n", .{failedProtocols.len});
     std.debug.print("Remaining: {d}\n", .{remainingProtocols.len});
 
-    var out = try makePolarionXmlText(alloc, xml_text, remainingProtocols);
-    std.debug.print("\n\n{s}\n", .{out});
+    var out = try makePolarionXmlText(alloc, xml_text, passedProtocols);
+    try createOutputFile(PassedXML, out);
+
+    out = try makePolarionXmlText(alloc, xml_text, failedProtocols);
+    try createOutputFile(FailedXML, out);
+
+    out = try makePolarionXmlText(alloc, xml_text, remainingProtocols);
+    try createOutputFile(RemainingXML, out);
+
+    std.debug.print("Generated xml files\n", .{});
+}
+
+fn createOutputFile(filename: []const u8, data: []const u8) !void {
+    const file = try std.fs.cwd().createFile( filename, .{ .read = true },);
+    defer file.close();
+
+    try file.writeAll(data);
 }
 
 const ReadFileError = error{
