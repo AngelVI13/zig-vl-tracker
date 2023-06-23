@@ -23,7 +23,11 @@ const Errors = error{
     FileTooBig,
 };
 
-// TODO: 3. Check for memory leaks using valgrind or sth like that
+// NOTE: To check for memory leaks:
+// valgrind --leak-check=full --track-origins=yes --show-leak-kinds=all \
+// --num-callers=15 --log-file=leak.txt ./zig-out/bin/zig-vl-tracker
+// And replace GPA with c allocator:
+// var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
 pub fn main() !void {
     std.debug.print("\n", .{});
     var clock1 = try std.time.Timer.start();
@@ -164,7 +168,6 @@ pub const GetTestsFromDirResult = struct {
     failed: []const []const u8,
 };
 
-// TODO: Path parameter should be the CWD
 pub fn getTestsFromDir(alloc: Allocator, dir: *std.fs.Dir) !GetTestsFromDirResult {
     var tc_filename_re = try Regex.compile(alloc, tc_filename_pattern);
     defer tc_filename_re.deinit();
@@ -240,7 +243,7 @@ pub fn getTestsFromDir(alloc: Allocator, dir: *std.fs.Dir) !GetTestsFromDirResul
 
 const TestStatus = struct {
     tc_id: []const u8,
-    status: []const u8, // TODO: make this into enum
+    status: []const u8,
 };
 
 fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
