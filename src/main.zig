@@ -16,13 +16,21 @@ const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
 const PassedXML    = "passed.xml";
 const FailedXML    = "failed.xml";
 const RemainingXML = "remaining.xml";
+const LogFile = "log.txt";
 
+// TODO: 3. Add timing info
+// TODO: 4. Check for memory leaks using valgrind or sth like that
 pub fn main() !void {
-    std.debug.print("\nProcessing...\n", .{});
+    log("\nProcessing...\n", .{});
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();
     const alloc = arena.allocator();
+
+    std.fs.cwd().deleteFile(PassedXML) catch {};
+    std.fs.cwd().deleteFile(FailedXML) catch {};
+    std.fs.cwd().deleteFile(RemainingXML) catch {};
 
     // I think this is not needed when using ArenaAllocator
     // defer std.debug.assert(gpa.deinit() == .ok);
@@ -39,17 +47,18 @@ pub fn main() !void {
     defer tc_filename_re.deinit();
 
     var result = try getTestsFromDir(alloc, &tc_filename_re, "src");
-    std.debug.print("Found Passed TCs: {s}", .{result.passed});
-    std.debug.print("Found Failed TCs: {s}", .{result.failed});
+    log("Found Passed TCs: {s}", .{result.passed});
+    log("Found Failed TCs: {s}", .{result.failed});
 
     var passedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.passed);
     var failedProtocols = try getProtocolsFromIds(alloc, &protocolsMap, result.failed);
 
     var remainingProtocols = try getRemainingProtocols(alloc, &protocolsMap, passedProtocols, failedProtocols);
-    std.debug.print("Master: {d}\n", .{protocolsMap.count()});
-    std.debug.print("Passed: {d}\n", .{passedProtocols.len});
-    std.debug.print("Failed: {d}\n", .{failedProtocols.len});
-    std.debug.print("Remaining: {d}\n", .{remainingProtocols.len});
+    log("Master: {d}\n", .{protocolsMap.count()});
+    log("Passed: {d}\n", .{passedProtocols.len});
+    log("Failed: {d}\n", .{failedProtocols.len});
+    log("Remaining: {d}\n", .{remainingProtocols.len});
+    std.log.info("Remaining: {d}\n", .{remainingProtocols.len});
 
     var out = try makePolarionXmlText(alloc, xml_text, passedProtocols);
     try createOutputFile(PassedXML, out);
@@ -60,7 +69,21 @@ pub fn main() !void {
     out = try makePolarionXmlText(alloc, xml_text, remainingProtocols);
     try createOutputFile(RemainingXML, out);
 
-    std.debug.print("Generated xml files\n", .{});
+    log("Generated xml files\n", .{});
+}
+
+pub fn log(
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const logfile = std.fs.cwd().createFile(LogFile, .{ .truncate = false }) catch return;
+    defer logfile.close();
+    const writer = logfile.writer();
+    const end = logfile.getEndPos() catch return;
+    logfile.seekTo(end) catch return;
+
+    writer.print(format, .{ } ++ args) catch return;
+    std.debug.print(format, .{ } ++ args);
 }
 
 fn createOutputFile(filename: []const u8, data: []const u8) !void {
@@ -172,8 +195,8 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
         try failed.append(key.*);
     }
 
-    std.debug.print("Failed TCs that later passed: {s}\n", .{try failedThatPassed.toOwnedSlice()});
-    std.debug.print("Failed Multiple Times: {s}\n", .{try failedDuplicates.toOwnedSlice()});
+    log("Failed TCs that later passed: {s}\n", .{try failedThatPassed.toOwnedSlice()});
+    log("Failed Multiple Times: {s}\n", .{try failedDuplicates.toOwnedSlice()});
 
     var passedKeyIterator = passedMap.keyIterator();
     while (passedKeyIterator.next()) |key| {
@@ -368,10 +391,10 @@ test "parse protocol xml" {
     try std.testing.expect(list.items.len == 2);
 
     // for (list.items, 0..) |elem, idx| {
-    //     std.debug.print("{d} {} {s}\n", .{ idx, @TypeOf(elem), elem.tag });
+    //     print("{d} {} {s}\n", .{ idx, @TypeOf(elem), elem.tag });
 
     //     if (elem.getAttribute("id")) |id| {
-    //         std.debug.print("{s}\n", .{id});
+    //         print("{s}\n", .{id});
     //     }
     // }
 }
