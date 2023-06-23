@@ -45,7 +45,7 @@ pub fn main() !void {
 
     const master_xml = try getMasterFile(alloc, &dir);
     log("Found master: {s}\n", .{master_xml});
-    var xml_text = try readFile(&dir, master_xml);
+    var xml_text = try readFile(alloc, &dir, master_xml);
 
     const xml_document = try xml.parse(alloc, xml_text);
     defer xml_document.deinit();
@@ -123,7 +123,7 @@ fn createOutputFile(dir: *std.fs.Dir, filename: []const u8, data: []const u8) !v
     try file.writeAll(data);
 }
 
-pub fn readFile(dir: *std.fs.Dir, filename: []const u8) ![]const u8 {
+pub fn readFile(alloc: Allocator, dir: *std.fs.Dir, filename: []const u8) ![]const u8 {
     var file = try dir.openFile(filename, .{});
     defer file.close();
 
@@ -137,7 +137,7 @@ pub fn readFile(dir: *std.fs.Dir, filename: []const u8) ![]const u8 {
         return error.FileTooBig;
     }
 
-    return buf[0..n];
+    return alloc.dupe(u8, buf[0..n]);
 }
 
 /// Get a map with TC ids as keys and pointer to xml element as values.
