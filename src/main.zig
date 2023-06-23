@@ -8,34 +8,44 @@ const Regex = @import("regex").Regex;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
-const root_dir = "src";
-const master_xml = root_dir ++ "/" ++ "master_cleaning.xml";
 const megabyte = 1024 * 1024;
 
-const filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
+const tc_filename_pattern = "report_([a-zA-Z0-9]+-\\d+)_([A-Z]+)_.*";
+const master_filename_pattern = "^master_.*?\\.xml$";
 const PassedXML    = "passed.xml";
 const FailedXML    = "failed.xml";
 const RemainingXML = "remaining.xml";
 const LogFile = "log.txt";
 
-// TODO: 3. Add timing info
-// TODO: 4. Check for memory leaks using valgrind or sth like that
+const Errors = error{
+    MasterNotFound,
+    MissingXmlProtocolTag,
+    FileTooBig,
+};
+
+// TODO: 3. Check for memory leaks using valgrind or sth like that
 pub fn main() !void {
-    log("\nProcessing...\n", .{});
+    std.debug.print("\n", .{});
+    var clock1 = try std.time.Timer.start();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    std.fs.cwd().deleteFile(PassedXML) catch {};
-    std.fs.cwd().deleteFile(FailedXML) catch {};
-    std.fs.cwd().deleteFile(RemainingXML) catch {};
-
     // I think this is not needed when using ArenaAllocator
     // defer std.debug.assert(gpa.deinit() == .ok);
 
-    var xml_text = try readFile(master_xml);
+    var dir = std.fs.cwd();
+
+    dir.deleteFile(LogFile) catch {};
+    dir.deleteFile(PassedXML) catch {};
+    dir.deleteFile(FailedXML) catch {};
+    dir.deleteFile(RemainingXML) catch {};
+
+    const master_xml = try getMasterFile(alloc, &dir);
+    log("Found master: {s}\n", .{master_xml});
+    var xml_text = try readFile(&dir, master_xml);
 
     const xml_document = try xml.parse(alloc, xml_text);
     defer xml_document.deinit();
@@ -43,10 +53,7 @@ pub fn main() !void {
     var protocolsMap = try getProtocolsFromXml(alloc, xml_document.root);
     defer protocolsMap.deinit();
 
-    var tc_filename_re = try Regex.compile(alloc, filename_pattern);
-    defer tc_filename_re.deinit();
-
-    var result = try getTestsFromDir(alloc, &tc_filename_re, "src");
+    var result = try getTestsFromDir(alloc, &dir);
     log("Found Passed TCs: {s}", .{result.passed});
     log("Found Failed TCs: {s}", .{result.failed});
 
@@ -58,18 +65,19 @@ pub fn main() !void {
     log("Passed: {d}\n", .{passedProtocols.len});
     log("Failed: {d}\n", .{failedProtocols.len});
     log("Remaining: {d}\n", .{remainingProtocols.len});
-    std.log.info("Remaining: {d}\n", .{remainingProtocols.len});
 
     var out = try makePolarionXmlText(alloc, xml_text, passedProtocols);
-    try createOutputFile(PassedXML, out);
+    try createOutputFile(&dir, PassedXML, out);
 
     out = try makePolarionXmlText(alloc, xml_text, failedProtocols);
-    try createOutputFile(FailedXML, out);
+    try createOutputFile(&dir, FailedXML, out);
 
     out = try makePolarionXmlText(alloc, xml_text, remainingProtocols);
-    try createOutputFile(RemainingXML, out);
+    try createOutputFile(&dir, RemainingXML, out);
 
     log("Generated xml files\n", .{});
+    const zig_time = clock1.read();
+    std.debug.print("Time: {any}\n", .{std.fmt.fmtDuration(zig_time)});
 }
 
 pub fn log(
@@ -82,23 +90,41 @@ pub fn log(
     const end = logfile.getEndPos() catch return;
     logfile.seekTo(end) catch return;
 
-    writer.print(format, .{ } ++ args) catch return;
-    std.debug.print(format, .{ } ++ args);
+    const timestamp = std.time.timestamp();
+
+    writer.print("{}: " ++ format, .{ timestamp } ++ args) catch return;
+    std.debug.print("{}: " ++ format, .{ timestamp } ++ args);
 }
 
-fn createOutputFile(filename: []const u8, data: []const u8) !void {
-    const file = try std.fs.cwd().createFile( filename, .{ .read = true },);
+// NOTE: This and getTestsFromDir loops over current directory twice which is unnecessary
+fn getMasterFile(alloc: Allocator, dir: *std.fs.Dir) ![]const u8 {
+    var master_filename_re = try Regex.compile(alloc, master_filename_pattern);
+    defer master_filename_re.deinit();
+    
+    var dir_iter = try dir.openIterableDir(".", .{});
+    defer dir_iter.close();
+
+    var walker = try dir_iter.walk(alloc);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (try master_filename_re.match(entry.basename)) {
+            return alloc.dupe(u8, entry.path);
+        }
+    }
+
+    return error.MasterNotFound;
+}
+
+fn createOutputFile(dir: *std.fs.Dir, filename: []const u8, data: []const u8) !void {
+    const file = try dir.createFile( filename, .{ .read = true },);
     defer file.close();
 
     try file.writeAll(data);
 }
 
-const ReadFileError = error{
-    FileTooBig,
-};
-
-pub fn readFile(filename: []const u8) ![]const u8 {
-    var file = try std.fs.cwd().openFile(filename, .{});
+pub fn readFile(dir: *std.fs.Dir, filename: []const u8) ![]const u8 {
+    var file = try dir.openFile(filename, .{});
     defer file.close();
 
     var buf_reader = std.io.bufferedReader(file.reader());
@@ -139,7 +165,10 @@ pub const GetTestsFromDirResult = struct {
 };
 
 // TODO: Path parameter should be the CWD
-pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTestsFromDirResult {
+pub fn getTestsFromDir(alloc: Allocator, dir: *std.fs.Dir) !GetTestsFromDirResult {
+    var tc_filename_re = try Regex.compile(alloc, tc_filename_pattern);
+    defer tc_filename_re.deinit();
+
     var passedMap = std.StringHashMap(u8).init(alloc);
     defer passedMap.deinit();
 
@@ -149,14 +178,14 @@ pub fn getTestsFromDir(alloc: Allocator, re: *Regex, path: []const u8) !GetTests
     var failedDuplicates = std.ArrayList([]const u8).init(alloc);
     defer failedDuplicates.deinit();
 
-    var dir = try std.fs.cwd().openIterableDir(path, .{});
-    defer dir.close();
+    var dir_iter = try dir.openIterableDir(".", .{});
+    defer dir_iter.close();
 
-    var walker = try dir.walk(alloc);
+    var walker = try dir_iter.walk(alloc);
     defer walker.deinit();
 
     while (try walker.next()) |entry| {
-        const res = try getInfoFromFilename(re, entry.basename);
+        const res = try getInfoFromFilename(&tc_filename_re, entry.basename);
         if (res == null) {
             continue;
         }
@@ -316,8 +345,7 @@ fn makePolarionXmlText(
     const protocols_start_idx = std.mem.indexOf(u8, master_xml_txt, start_str);
     const protocols_end_idx = std.mem.indexOf(u8, master_xml_txt, end_str);
     if ((protocols_start_idx == null) or (protocols_end_idx == null)) {
-        // TODO: throw error
-        return "";
+        return error.MissingXmlProtocolTag;
     }
     const start_idx = protocols_start_idx.? + start_str.len;
     const end_idx = protocols_end_idx.?;
@@ -401,7 +429,7 @@ test "parse protocol xml" {
 
 test "regex simple pattern match" {
     // const filename_pattern = "report_(?P<id>[a-zA-Z0-9]+-\\d+)_(?P<status>[A-Z]+)_.*";
-    var re = try Regex.compile(std.testing.allocator, filename_pattern);
+    var re = try Regex.compile(std.testing.allocator, tc_filename_pattern);
     defer re.deinit();
 
     const example_filename = "report_4AP2-38205_PASS_2022_04_19_17h_51m.xml";
