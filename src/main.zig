@@ -20,7 +20,12 @@ const RemainingXML = "remaining.xml";
 pub fn main() !void {
     std.debug.print("\nProcessing...\n", .{});
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // I think this is not needed when using ArenaAllocator
+    // defer std.debug.assert(gpa.deinit() == .ok);
 
     var xml_text = try readFile(master_xml);
 
