@@ -43,8 +43,8 @@ pub fn main() !void {
     std.debug.print("Failed: {d}\n", .{failedProtocols.len});
     std.debug.print("Remaining: {d}\n", .{remainingProtocols.len});
 
-    var out = try makePolarionXmlText(xml_text, remainingProtocols);
-    _ = out;
+    var out = try makePolarionXmlText(alloc, xml_text, remainingProtocols);
+    std.debug.print("\n\n{s}\n", .{out});
 }
 
 const ReadFileError = error{
@@ -182,7 +182,11 @@ fn getInfoFromFilename(re: *Regex, filename: []const u8) !?TestStatus {
 }
 
 /// Caller owns the returned data
-fn getProtocolsFromIds(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), tcIds: []const []const u8) ![]*xml.Element {
+fn getProtocolsFromIds(
+    alloc: Allocator,
+    protocolsMap: *std.StringHashMap(*xml.Element),
+    tcIds: []const []const u8
+) ![]*xml.Element {
     var list = std.ArrayList(*xml.Element).init(alloc);
     defer list.deinit();
 
@@ -195,7 +199,12 @@ fn getProtocolsFromIds(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.E
 }
 
 /// Caller owns the returned data
-fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml.Element), passed: []*xml.Element, failed: []*xml.Element) ![]*xml.Element {
+fn getRemainingProtocols(
+    alloc: Allocator,
+    protocolsMap: *std.StringHashMap(*xml.Element),
+    passed: []*xml.Element,
+    failed: []*xml.Element
+) ![]*xml.Element {
     var remaining = std.ArrayList(*xml.Element).init(alloc);
     defer remaining.deinit();
 
@@ -250,23 +259,53 @@ fn getRemainingProtocols(alloc: Allocator, protocolsMap: *std.StringHashMap(*xml
     return remaining.toOwnedSlice();
 }
 
-fn makePolarionXmlText(master_xml_txt: []const u8, protocols: []*xml.Element) ![]const u8 {
-    _ = protocols;
-    const protocols_start = "<protocols>";
-    const protocols_end = "</protocols>";
+fn makePolarionXmlText(
+    alloc: Allocator,
+    master_xml_txt: []const u8,
+    protocols: []*xml.Element
+) ![]const u8 {
+    const start_str = "<protocols>";
+    const end_str = "</protocols>";
 
-    const protocols_start_idx = std.mem.indexOf(u8, master_xml_txt, protocols_start);
-    const protocols_end_idx = std.mem.indexOf(u8, master_xml_txt, protocols_end);
+    const protocols_start_idx = std.mem.indexOf(u8, master_xml_txt, start_str);
+    const protocols_end_idx = std.mem.indexOf(u8, master_xml_txt, end_str);
     if ((protocols_start_idx == null) or (protocols_end_idx == null)) {
         // TODO: throw error
         return "";
     }
-    const start_idx = protocols_start_idx.? + protocols_start.len;
+    const start_idx = protocols_start_idx.? + start_str.len;
     const end_idx = protocols_end_idx.?;
-    std.debug.print("\n{} {} {}\n", .{protocols_start_idx.?, start_idx, end_idx});
 
-    std.debug.print("{s}\n", .{master_xml_txt[0..protocols_start_idx.?]});
-    return "";
+    var out_txt = master_xml_txt[0..start_idx];
+    for (protocols) |protocol| {
+        const protocol_txt = try makeProtocolTxt(alloc, protocol);
+        out_txt = try std.fmt.allocPrint(alloc, "\n{s}\n{s}", .{ out_txt, protocol_txt });
+    }
+
+    out_txt = try std.fmt.allocPrint(
+        alloc,
+        "\n{s}\n{s}",
+        .{ out_txt, master_xml_txt[end_idx .. master_xml_txt.len - 1] }
+    );
+
+    return out_txt;
+}
+
+fn makeProtocolTxt(alloc: Allocator, xml_elem: *xml.Element) ![]const u8 {
+    const project_id = xml_elem.getAttribute("project-id").?;
+    const tc_id = xml_elem.getAttribute("id").?;
+    const test_script_reference = xml_elem.getCharData("test-script-reference").?;
+
+    const protocol_template =
+        \\<protocol project-id="{s}" id="{s}">
+        \\    <test-script-reference>{s}</test-script-reference>
+        \\</protocol>
+    ;
+    return try std.fmt.allocPrint(
+        alloc,
+        protocol_template,
+        .{ project_id, tc_id, test_script_reference }
+    );
 }
 
 test "parse protocol xml" {
